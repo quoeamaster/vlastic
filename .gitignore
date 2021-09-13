@@ -1,6 +1,4 @@
 
-# .v4p backup files
-*~.xml
+# feature list (for management purpose)
+feature.list
 
-# Dynamic plugins .dll
-bin/
