@@ -1,0 +1,47 @@
+[components]
+
+cli - interface for accessing the functionalities
+|_ exporter - contains the export related fn (export index setting+mapping, index data)
+   |_ config - reads and parse a config file
+   |_ es_connector - connection to ES cluster
+   |_ file_writer - writes data to file-stream
+|_ importer - contains the import related fn (create index, create data)
+   |_ config - reads and parse a config file
+   |_ es_connector - connection to ES cluster
+   |_ file_reader - reads data from file/stream
+
+[libraries involved]
+cli 
+-> either built-in cli or 
+-> quoeamaster.vcommander
+
+es_connector 
+-> net.http
+
+file_reader, file_writer 
+-> json (parsing or ORM)
+
+[done] config
+-> json
+-> sample config file
+{
+   "es_hosts": [ "http://localhost:9200", "https://some_host:9205" ],
+   "es_username": "elastic",  <- can be retrieved through environment variable (vlastic_user)
+   "es_password": "password", <- can be retrieved through environment variable (vlastic_pwd)
+   
+   "exports": {
+      "export_indices_meta": false, <- whether per doc's _index, _id and _type should be exported too
+      "export_indices_settings_mappings": true, <- should export indices' settings and mappings config?
+      "indices": [ "class_b", "high_school_classes" ], <- target indices for export (e.g. "class_b,high_school_classes")
+      "filter_query": "{ \"match\": { \"category\": \"Education\" }}", <- query as json format to apply during the export operation
+      "target_folder": "/user/exporter/data/" <- where to save the exported file(s)
+   },
+
+   "imports": {
+      "create_target_indices": [ "class_b" ], <- should create the target indices based on the exported indices file?
+      "target_indices": [ "class_b", "high_school_classes" ], <- might seem duplicated, however, some indices might not need to be created and re-used, hence this config is still required.
+      "source_folder": "/user/exporter/data/", 
+      "use_indices_meta": true <- whether meta _index, _id, _type should be used; if not used, might created duplicated data as documents would imported using a generated ID.
+   }
+}
+

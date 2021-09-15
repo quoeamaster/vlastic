@@ -1,0 +1,21 @@
+{
+   "es_hosts": [ "http://localhost:9200", "https://some_host:9205" ],
+   "es_username": "RooT",
+
+   "unknown": "an unknown field... would be ignored simply",
+   
+   "exports": {
+      "export_indices_meta": false,
+      "export_indices_settings_mappings": true,
+      "indices": [ "class_b", "high_school_classes" ],
+      "filter_query": "{ \"match\": { \"category\": \"Education\" }}",
+      "target_folder": "/user/exporter/data/"
+   },
+
+   "imports": {
+      "create_target_indices": [ "class_b" ],
+      "target_indices": [ "class_b", "high_school_classes" ],
+      "source_folder": "/user/exporter/data/", 
+      "use_indices_meta": true
+   }
+}
