@@ -43,3 +43,18 @@ fn test_parse_config() {
 	assert cfg.es_password == "password"
 	assert cfg.imports.source_folder == "/user/exporter/data/"
 }
+
+// test_parse_config_on_missing_config_file - should throw error containing a message "failed to open file".
+fn test_parse_config_on_missing_config_file() {
+	println("## config_test.test_parse_config_on_missing_config_file ##\n")
+
+	cfg := parse_config("./unavailable_file.json") or {
+		i := err.msg.index("failed to open file") or {
+			panic("1. error in loading a missing config file, $err")
+		}
+		if i == -1 {
+			panic("1. error in loading a missing config file, $err")
+		}
+		Config{}
+	}
+}

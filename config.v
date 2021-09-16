@@ -30,7 +30,9 @@ const (
 
 // Config - encapsulation of the json config file.
 struct Config {
-	es_hosts []string
+	// [json: es_hosts] -> attributes for the field es_hosts; similar to golang `json:es_hosts
+	// ref: https://modules.vlang.io/x.json2.html`
+	es_host string [json: es_host]
 	exports Exports
 	imports Imports
 	

@@ -25,7 +25,7 @@ file_reader, file_writer
 -> json
 -> sample config file
 {
-   "es_hosts": [ "http://localhost:9200", "https://some_host:9205" ],
+   "es_host": "http://localhost:9200",
    "es_username": "elastic",  <- can be retrieved through environment variable (vlastic_user)
    "es_password": "password", <- can be retrieved through environment variable (vlastic_pwd)
    

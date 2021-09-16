@@ -1,5 +1,5 @@
 {
-   "es_hosts": [ "http://localhost:9200", "https://some_host:9205" ],
+   "es_host": "http://localhost:9200",
    "es_username": "RooT",
 
    "unknown": "an unknown field... would be ignored simply",

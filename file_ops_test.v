@@ -19,6 +19,7 @@
 module main
 
 import json
+import x.json2
 
 type Json_types = i8|int|string|bool|f32
 
@@ -30,7 +31,7 @@ fn test_read_data_file() {
 		panic("error in reading the data file, $err")
 	}
 	assert batch.lines.len == 30
-	println(batch.lines[0])
+	println("* 1st line of data read => ${batch.lines[0]}")
 
 	// is it possible to parse the json into... a map[string]int???
 	m := json.decode(map[string]int, batch.lines[0]) or {
@@ -39,6 +40,24 @@ fn test_read_data_file() {
 	assert m['io_loadings'] == 19000
 
 	// what about Sum-Typed or voidptr? Not work...
-
 	// in general, would suggest to map with a struct which matches the json's fields.
+	decode_data_line_01(batch.lines[0])
+}
+
+// decode_data_line_01 - testing on x.json2 parsing on non-predefined-json data structures.
+fn decode_data_line_01(line string) {
+	raw := json2.raw_decode(line) or {
+		panic("[decode_data_line_01] raw_decode error, $err")
+	}
+	m := raw.as_map()
+	
+	mut v := m['id'] or { json2.Any(0) }
+	assert v.int() == 1
+	
+	v = m["cpu_cores"] or { json2.Any(0) }
+	assert v.int() == 1
+
+	v = m["io_loadings"] or { json2.Any(0) }
+	assert v.int() == 19000
+	assert v.str() == "19000"
 }

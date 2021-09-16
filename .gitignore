@@ -2,3 +2,8 @@
 # feature list (for management purpose)
 feature.list
 
+# testing based config file
+testdata/test_config_cloud**.json
+
+# output data files after running test (ignore)
+testdata/data
