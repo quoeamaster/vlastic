@@ -44,9 +44,13 @@ fn test_prepare_request() {
 	assert r.method == h.Method.get
 }
 
-// test_export_00_settings_mappings - test on export operations; included exporting settings+mappings.
-fn test_export_00_settings_mappings() {
-	println("## connect_test.test_export_00_only_settings_mappings ##\n")
+// test_export_00_settings_mappings_no_meta_included - test on export operations; included exporting settings+mappings.
+fn test_export_00_settings_mappings_no_meta_included() {
+	println("## connect_test.test_export_00_settings_mappings_no_meta_included ##\n")
+
+	// house keep
+	//delete_file("./testdata/data/aflo_flow_config_*,apache_demo_backup.data")
+	delete_file("./testdata/data/aflo_flow_config_*,kibana_sample_data_flights.data")
 
 	// load config
 	c := parse_config("./testdata/test_config_cloud_00.json") or {
@@ -63,5 +67,11 @@ fn test_export_00_settings_mappings() {
 	// run export
 	export_operation(c) or {
 		panic("2a. failed on export, $err")
+	}
+}
+
+fn delete_file(path string) {
+	os.rm(path) or {
+		panic("[delete_file] failed to remove file, reason: $err")
 	}
 }

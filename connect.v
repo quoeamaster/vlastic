@@ -21,12 +21,20 @@ module main
 import encoding.base64
 import net.http
 import os
+import strconv
 import strings
 import x.json2
 
 const (
 	header_auth_basic_scheme = "Basic"
 )
+
+// Parse_es_response - a struct to encapsulate the last_sort_meta if any + is_hits_empty (if the hits.hits is an empty array).
+struct Parse_es_response {
+mut:	
+	last_sort_meta string
+	is_hits_empty bool
+}
 
 // prepare_request - prepare a http request based on values coming from the [Config] as well as the http [method] and targeted [path].
 fn prepare_request(cfg Config, method http.Method, path string) http.Request {
@@ -70,14 +78,14 @@ fn is_valid_operation(r &http.Response) bool {
 	return s.is_valid() && s.is_success()
 }
 
+// export_operation - export the indices' data.
 fn export_operation(cfg Config) ?bool {
-	mut queries := strings.new_builder(1024)
 	// need to export settings an mappings?
 	if cfg.exports.export_indices_settings_mappings == true {
-		export_indices_settings_mappings(cfg) or {
-			return err
-		}
+		export_indices_settings_mappings(cfg)?
 	}
+	// export data
+	export_indices_data(cfg)?
 
 	return true
 }
@@ -105,6 +113,7 @@ fn export_indices_settings_mappings(cfg Config) ?bool {
 	m := raw.as_map()
 
 	// create the settings_mappings file
+	// if the response is empty... then no files written and no error should occur
 	for k, value in m {
 		file_name := "${append_slash_to_url(cfg.exports.target_folder)}${k}-settings-mappings.data"
 		//v := m[k] or { json2.Any(0) }
@@ -115,3 +124,154 @@ fn export_indices_settings_mappings(cfg Config) ?bool {
 	}
 	return true
 }
+fn export_indices_data(cfg Config) ?bool {
+	mut indices := ""
+	for x in cfg.exports.indices {
+		if indices.len > 0 {
+			indices+=","
+		}
+		indices+=x
+	}
+	// open the data file
+	file_name := "${append_slash_to_url(cfg.exports.target_folder)}${indices}.data"
+	mut f := os.open_append(file_name) or {
+		return error("[export_indices_data] failed to open the file for append, reason: $err")
+	}
+	defer {
+		f.flush()
+		f.close()
+	}
+	// [bug??] due to the parsing... of some problematic data; whenever error occurs, that 100 batch is ignored.
+	batch_size := 100
+	api := "$indices/_search?size=${batch_size}"
+	query_body := '"query": $cfg.exports.filter_query'
+	sort_body := '"sort": [{"_doc":"asc"}]'
+
+	mut req := prepare_request(cfg, http.Method.get, api)
+	req.data = '{ $query_body, $sort_body }'
+
+	mut res := req.do() or {
+		return error("[export_indices_data] failed to run the http request [$req.url], reason: $err")
+	}
+	if !is_valid_operation(&res) {
+		return error("[export_indices_data] not a valid response, reason: ${res.bytestr()}")
+	}
+	// parsing response
+	mut p_res := Parse_es_response{}
+	p_res = parse_es_hits_response(mut &f, &res, cfg.exports.export_indices_meta) or {
+		println("** 1st . some documents have parsing issues, idx[ $p_res.last_sort_meta ]")
+		force_continue_parsing(p_res, batch_size)?
+	}
+	// loop until no more docs left for iteration
+	for p_res.is_hits_empty == false {
+		req.data = '{ $query_body, $sort_body, "search_after": ${p_res.last_sort_meta} }'
+		//println("[debug] ${req.data}")
+
+		res = req.do() or {
+			return error("[export_indices_data] non-first-round > failed to run the http request [$req.url], reason: $err")
+		}
+		if !is_valid_operation(&res) {
+			return error("[export_indices_data] non-first-round > not a valid response, reason: ${res.bytestr()}")
+		}
+		p_res = parse_es_hits_response(mut &f, &res, cfg.exports.export_indices_meta) or {
+			// force continue
+			println("** 2nd . some documents have parsing issues, idx[ $p_res.last_sort_meta ]")
+			force_continue_parsing(p_res, batch_size)?
+		}
+		// [debug]
+		//println(p_res)
+	}
+	return true
+}
+// parse_es_hits_response - parse the hits response provided and write the content to the file.
+// If this response is not a hit response, would result an error.
+//
+// return 
+// => string = last_sort_meta 
+// => bool = true if hits.hits == empty
+fn parse_es_hits_response(mut f &os.File, res &http.Response, include_meta bool) ?Parse_es_response {
+	mut p_res := Parse_es_response{}
+
+	raw := json2.raw_decode(res.text) or {
+		return error("[parse_es_hits_response] failed to parse the response body, reason: $err")
+	}
+	mut m := raw.as_map()
+	mut hits := m["hits"] or { return error("[parse_es_hits_response] failed to get 'hits' - 1st level") }
+	m = hits.as_map()
+	hits = m["hits"] or { return error("[parse_es_hits_response] failed to get 'hits.hits' - 2nd level") }
+	hits_arr := hits.arr()
+
+	// is it empty hits?
+	if hits_arr.len == 0 {
+		p_res.last_sort_meta = ""
+		p_res.is_hits_empty = true
+		return p_res
+	}
+	mut sb := strings.new_builder(10240)
+	last_idx := hits_arr.len-1
+	
+	for idx, x in hits_arr {
+		item_map := x.as_map()
+		mut final_item := map[string]json2.Any
+
+		if include_meta {
+			mut v := item_map['_index'] or { json2.Any("__error__") }
+			final_item['_index'] = v.str()
+
+			v = item_map['_type'] or { json2.Any("__error__") }
+			final_item['_type'] = v.str()
+
+			v = item_map['_id'] or { json2.Any("__error__") }
+			final_item['_id'] = v.str()
+		}
+		v := item_map['_source'] or { 
+			return error("[parse_es_hits_response] failed to get the _source on hits.hits array, item[$idx]") 
+		}
+		final_item['_source'] = v
+		// append the object to sb
+		sb.write_string("${final_item.str()}\n")
+
+		// update the last_sort_meta
+		if idx == last_idx {
+			v1 := item_map['sort'] or { return error("[parse_es_hits_response] failed to get 'sort' clause, item[$idx]") }
+			p_res.last_sort_meta = v1.arr().str()
+		}
+	}
+	f.write_string(sb.str()) or {
+		return error("[parse_es_hits_response] failed to write to file, reason: $err")
+	}
+
+	p_res.is_hits_empty = false
+	return p_res
+}
+// force_continue_parsing - create the [Parse_es_response] with the next _doc (natural order) 
+// based on the interval declared by [batch_size].
+fn force_continue_parsing(p_res Parse_es_response, batch_size int) ?Parse_es_response {
+	// extract the id value...
+	i_2 := p_res.last_sort_meta.index("]") or { 2 }
+	i_after := strconv.atoi(p_res.last_sort_meta[1..i_2]) or {
+		return error("[force_continue_parsing] 0. last_sort_meta is invalid... terminate now. ${p_res.last_sort_meta}")	
+	}
+	//println("after strconv ${i_after} and ${i_after+10000}")
+	return Parse_es_response{
+		last_sort_meta: "[${i_after+batch_size}]"
+		is_hits_empty: false
+	}
+}
+
+
+
+/* TODO: extract this logic to another fn ...
+// check whether the response is a valid ES response (invalid == contain a root field "error")
+v := json2.raw_decode(r.text) or {
+	println("[is_valid_operator] failed to decode the contents of the http response [${r.text}], reason: $err")
+	return false
+}
+m := v.as_map()
+v_err := m["error"] or {
+	// valid response~
+	return true
+}
+println("[is_valid_operator] 'error' occured, ${v_err}")
+return false
+*/
